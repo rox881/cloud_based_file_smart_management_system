@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Document Classifier</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f5f7fa; color: #333; }
+        .card { background: white; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
+        h1 { text-align: center; color: #2c3e50; margin-bottom: 10px; }
+        .upload-area { border: 2px dashed #3498db; border-radius: 8px; padding: 40px 20px; text-align: center; cursor: pointer; transition: all 0.3s; }
+        .upload-area:hover { background: #e3f2fd; border-color: #2980b9; }
+        .btn { background: #3498db; color: white; border: none; padding: 12px 25px; border-radius: 5px; font-size: 16px; cursor: pointer; margin-top: 15px; transition: background 0.3s; }
+        .btn:hover { background: #2980b9; }
+        .btn-primary { background: #27ae60; }
+        .btn-primary:hover { background: #219653; }
+        .file-list { margin-top: 20px; }
+        .file-item { padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .file-name { font-weight: 600; color: #2c3e50; }
+        .file-status { padding: 5px 10px; border-radius: 15px; font-size: 12px; font-weight: bold; }
+        .status-pending { background: #f1c40f; color: #2c3e50; }
+        .status-success { background: #27ae60; color: white; }
+        .results { margin-top: 30px; text-align: center; }
+        .result-card { background: #e8f4fc; border-radius: 8px; padding: 15px; margin-top: 15px; }
+        .search-bar { display: flex; gap: 10px; margin-bottom: 20px; }
+        .search-input { flex: 1; padding: 10px 12px; border: 1px solid #d6dde6; border-radius: 6px; font-size: 15px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Smart Document Classifier</h1>
+        <p>Upload documents and let the cloud classify them automatically</p>
+        <div class="search-bar">
+            <input type="text" id="searchInput" class="search-input" placeholder="Search inside document text (example: invoice)">
+            <button class="btn" id="searchBtn" style="margin-top: 0;">Search</button>
+        </div>
+        <div class="upload-area" id="dropArea">
+            <i style="font-size: 48px; color: #3498db;">📁</i>
+            <h2>Drag & Drop Files Here</h2>
+            <p>or click to browse</p>
+            <input type="file" id="fileInput" multiple accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" style="display: none;">
+            <button class="btn" id="browseBtn">Browse Files</button>
+        </div>
+        <div class="file-list" id="fileList"></div>
+        <button class="btn btn-primary" id="classifyBtn" disabled>Classify All Files</button>
+    </div>
+    <div class="card results" id="resultsSection" style="display: none;">
+        <h2>Classification Results</h2>
+        <div id="resultsContainer"></div>
+    </div>
+
+    <script>
+        const dropArea = document.getElementById('dropArea');
+        const fileInput = document.getElementById('fileInput');
+        const browseBtn = document.getElementById('browseBtn');
+        const searchInput = document.getElementById('searchInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const fileList = document.getElementById('fileList');
+        const classifyBtn = document.getElementById('classifyBtn');
+        const resultsSection = document.getElementById('resultsSection');
+        const resultsContainer = document.getElementById('resultsContainer');
+
+        let uploadedFiles = [];
+
+        browseBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            fileInput.click();
+        });
+        dropArea.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileSelect);
+        dropArea.addEventListener('dragover', handleDragOver);
+        dropArea.addEventListener('dragleave', handleDragLeave);
+        dropArea.addEventListener('drop', handleFileDrop);
+        searchBtn.addEventListener('click', searchDocuments);
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                searchDocuments();
+            }
+        });
+        classifyBtn.addEventListener('click', classifyAll);
+
+        function handleFileSelect(e) { processFiles(e.target.files); }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            dropArea.style.borderColor = '#2980b9';
+            dropArea.style.backgroundColor = '#e3f2fd';
+        }
+
+        function handleDragLeave() {
+            dropArea.style.borderColor = '#3498db';
+            dropArea.style.backgroundColor = '#ffffff';
+        }
+
+        function handleFileDrop(e) {
+            e.preventDefault();
+            dropArea.style.borderColor = '#3498db';
+            dropArea.style.backgroundColor = '#ffffff';
+            processFiles(e.dataTransfer.files);
+        }
+
+        function processFiles(files) {
+            if (!files || files.length === 0) return;
+            uploadedFiles = Array.from(files);
+            renderFileList();
+            classifyBtn.disabled = false;
+        }
+
+        function renderFileList() {
+            fileList.innerHTML = '';
+            uploadedFiles.forEach((file) => {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+                item.innerHTML = `<span class="file-name">${file.name}</span><span class="file-status status-pending">Pending</span>`;
+                fileList.appendChild(item);
+            });
+        }
+
+        async function classifyAll() {
+            if (uploadedFiles.length === 0) return;
+
+            classifyBtn.disabled = true;
+            resultsSection.style.display = 'block';
+            resultsContainer.innerHTML = '<p>Processing files...</p>';
+
+            try {
+                const formData = new FormData();
+                uploadedFiles.forEach((file) => formData.append('files', file));
+
+                const response = await fetch('/api/classify', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to classify documents.');
+                }
+
+                renderResults(data);
+            } catch (err) {
+                resultsContainer.innerHTML = `<div class="result-card" style="background: #ffebee;"><h3>Error</h3><p>${err.message}</p></div>`;
+            } finally {
+                classifyBtn.disabled = false;
+            }
+        }
+
+        async function searchDocuments() {
+            const query = searchInput.value.trim();
+            if (!query) {
+                resultsSection.style.display = 'block';
+                resultsContainer.innerHTML = '<p>Please enter a search term.</p>';
+                return;
+            }
+
+            resultsSection.style.display = 'block';
+            resultsContainer.innerHTML = '<p>Searching...</p>';
+
+            try {
+                const response = await fetch(`/search?q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Search failed.');
+                }
+                renderSearchResults(query, data.results || []);
+            } catch (err) {
+                resultsContainer.innerHTML = `<div class="result-card" style="background: #ffebee;"><h3>Error</h3><p>${err.message}</p></div>`;
+            }
+        }
+
+        function renderSearchResults(query, results) {
+            if (!results.length) {
+                resultsContainer.innerHTML = `<p>No matches found for "${query}".</p>`;
+                return;
+            }
+
+            let html = `<p><strong>Search results for "${query}" (${results.length} found):</strong></p><div style="text-align: left; max-height: 300px; overflow-y: auto;">`;
+            results.forEach((item) => {
+                html += `<div class="result-card"><div><strong>${item.file_name || 'Unknown file'}</strong></div><div>Found in: ${item.folder_location || '-'}</div></div>`;
+            });
+            html += '</div>';
+            resultsContainer.innerHTML = html;
+        }
+
+        function renderResults(data) {
+            const details = Array.isArray(data.details) ? data.details : [];
+
+            if (details.length === 0) {
+                resultsContainer.innerHTML = '<p>No files classified</p>';
+                return;
+            }
+
+            let html = `<p><strong>Successfully processed ${details.length} files:</strong></p><div style="text-align: left; max-height: 300px; overflow-y: auto;">`;
+            details.forEach((result) => {
+                const statusClass = Number(result.confidence) > 0 ? 'status-success' : 'status-pending';
+                const confidence = Number(result.confidence) > 0 ? `(${result.confidence})` : '';
+                html += `<div class="result-card"><div><strong>${result.file || 'Unknown file'}</strong></div><div>Category: <span class="${statusClass}">${result.category || 'Unknown'}</span> ${confidence}</div><div>Location: ${result.destination || '-'}</div></div>`;
+            });
+            html += '</div>';
+            resultsContainer.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
