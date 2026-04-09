@@ -12,6 +12,8 @@ const loadingIndicator = document.getElementById("loadingIndicator");
 const loadingText = document.getElementById("loadingText");
 
 let uploadedFiles = [];
+let activeJobId = null;
+let pollTimer = null;
 
 browseBtn.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -54,6 +56,13 @@ function processFiles(files) {
     uploadedFiles = Array.from(files);
     renderFileList();
     classifyBtn.disabled = false;
+}
+
+function stopPolling() {
+    if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+    }
 }
 
 function renderFileList() {
@@ -114,7 +123,7 @@ async function classifyAll() {
     resultsSection.hidden = false;
     resultsContainer.textContent = "Processing files...";
     resultsTableBody.innerHTML = "";
-    setLoading(true, "Processing and saving files...");
+    setLoading(true, "Submitting upload...");
 
     try {
         const formData = new FormData();
@@ -126,12 +135,64 @@ async function classifyAll() {
         });
 
         const data = await parseJsonGuarded(response);
+        if (data.job_id) {
+            activeJobId = data.job_id;
+            resultsContainer.textContent = data.message || "Upload received. Processing in background.";
+            setLoading(false);
+            startJobPolling(activeJobId);
+            return;
+        }
+
         renderClassifyResults(data);
     } catch (error) {
         resultsContainer.textContent = `Error: ${error.message}`;
     } finally {
-        setLoading(false);
+        if (!activeJobId) {
+            setLoading(false);
+        }
     }
+}
+
+function startJobPolling(jobId) {
+    stopPolling();
+
+    const poll = async () => {
+        try {
+            const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`);
+            const job = await parseJsonGuarded(response);
+
+            if (job.status === "completed") {
+                activeJobId = null;
+                loadingIndicator.hidden = true;
+                stopPolling();
+                renderClassifyResults({ details: job.details || [] });
+                if (Array.isArray(job.warnings) && job.warnings.length > 0) {
+                    console.warn("Extraction warnings:", job.warnings);
+                }
+                return;
+            }
+
+            if (job.status === "failed") {
+                activeJobId = null;
+                loadingIndicator.hidden = true;
+                stopPolling();
+                resultsContainer.textContent = `Error: ${job.error || "Background processing failed."}`;
+                return;
+            }
+
+            resultsContainer.textContent = `${job.message || "Processing..."} (${job.processed || 0}/${job.total || 0})`;
+            loadingIndicator.hidden = false;
+            loadingText.textContent = "Processing in background...";
+            pollTimer = setTimeout(poll, 1500);
+        } catch (error) {
+            activeJobId = null;
+            loadingIndicator.hidden = true;
+            stopPolling();
+            resultsContainer.textContent = `Error: ${error.message}`;
+        }
+    };
+
+    poll();
 }
 
 async function searchDocuments() {
@@ -164,22 +225,28 @@ function renderClassifyResults(data) {
 
     if (details.length === 0) {
         resultsContainer.textContent = "No files were classified.";
+        resultsTableBody.innerHTML = "";
         return;
     }
 
-    resultsContainer.textContent = `Successfully processed ${details.length} files.`;
     resultsTableBody.innerHTML = "";
-
-    details.forEach((entry) => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-            <td>${entry.file || "Unknown file"}</td>
-            <td>${entry.category || "Uncategorized"}</td>
-            <td>${entry.confidence ?? "-"}</td>
-            <td>${entry.destination || "-"}</td>
-        `;
-        resultsTableBody.appendChild(row);
-    });
+    resultsContainer.innerHTML = `
+        <p>Successfully processed ${details.length} files.</p>
+        <div class="result-grid">
+            ${details
+                .map(
+                    (entry) => `
+                        <div class="result-card">
+                            <div><strong>${entry.file || "Unknown file"}</strong></div>
+                            <div>Category: ${entry.category || "Uncategorized"}</div>
+                            <div>Confidence: ${entry.confidence ?? "-"}</div>
+                            <div>Location: ${entry.destination || "-"}</div>
+                        </div>
+                    `
+                )
+                .join("")}
+        </div>
+    `;
 }
 
 function renderSearchResults(query, results) {
@@ -195,9 +262,9 @@ function renderSearchResults(query, results) {
         const row = document.createElement("tr");
         row.innerHTML = `
             <td>${entry.file_name || "Unknown file"}</td>
-            <td>-</td>
-            <td>-</td>
             <td>${entry.folder_location || "-"}</td>
+            <td>${typeof entry.file_size === "number" ? entry.file_size : entry.file_size || "-"}</td>
+            <td>${entry.mime_type || "-"}</td>
         `;
         resultsTableBody.appendChild(row);
     });

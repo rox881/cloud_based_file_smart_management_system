@@ -149,6 +149,19 @@ h2 {
     margin-bottom: 10px;
 }
 
+.result-grid {
+    display: grid;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.result-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    background: #fbfdff;
+}
+
 .loading {
     margin-top: 12px;
     margin-bottom: 12px;

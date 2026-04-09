@@ -1,97 +1,180 @@
 import os
+import threading
 import uuid
-from io import BytesIO
 from typing import Any
 
-import fitz
-import pytesseract
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
-from PIL import Image
 from supabase import Client, create_client
 from werkzeug.utils import secure_filename
+
+from services.classifier_service import classify_document, set_supabase_client
+from services.database_service import DatabaseService
+from services.ocr_service import OCRService
+from services.pdf_service import PDFService
+from services.text_extractor_service import TextExtractorService
 
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-# Change this path if Tesseract is installed in a different location.
-pytesseract.pytesseract.tesseract_cmd = os.getenv(
-    "TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-)
-
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
-PDF_EXTENSIONS = {".pdf"}
-TEXT_EXTENSIONS = {".txt"}
-KEYWORD_RULES = {
-    "Invoice": ["invoice", "tax", "gst", "amount due", "bill to"],
-    "Receipt": ["receipt", "paid", "cash", "total", "transaction"],
-    "ID Document": ["passport", "aadhaar", "license", "identity", "dob"],
-    "Contract": ["agreement", "contract", "terms", "party", "signature"],
-}
-
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY in environment variables.")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+set_supabase_client(supabase)
 app = Flask(__name__)
+database_service = DatabaseService(supabase)
+text_extractor = TextExtractorService(OCRService(), PDFService())
+
+job_store: dict[str, dict[str, Any]] = {}
+job_lock = threading.Lock()
 
 
-def _is_image_file(filename: str) -> bool:
-    return os.path.splitext(filename.lower())[1] in IMAGE_EXTENSIONS
+def _set_job_state(job_id: str, state: dict[str, Any]) -> None:
+    with job_lock:
+        job_store[job_id] = state
 
 
-def _debug_response_payload(response: Any) -> Any:
-    if response is None:
-        return None
-    if isinstance(response, dict):
-        return response
-    if hasattr(response, "model_dump"):
-        try:
-            return response.model_dump()
-        except Exception:  # noqa: BLE001
-            return str(response)
-    if hasattr(response, "data"):
-        return {"data": getattr(response, "data")}
-    return str(response)
+def _run_background_processing(job_id: str, files_payload: list[dict[str, Any]]) -> None:
+    _set_job_state(
+        job_id,
+        {
+            "job_id": job_id,
+            "status": "processing",
+            "message": "Processing files in background.",
+            "processed": 0,
+            "total": len(files_payload),
+            "details": [],
+            "warnings": [],
+        },
+    )
 
+    details: list[dict[str, Any]] = []
+    warnings: list[dict[str, str]] = []
 
-def _extract_text_from_file(filename: str, file_bytes: bytes) -> str:
-    extension = os.path.splitext(filename.lower())[1]
+    try:
+        for index, item in enumerate(files_payload, start=1):
+            file_name = item["filename"]
+            safe_name = secure_filename(file_name)
+            storage_path = f"uploads/{uuid.uuid4().hex}_{safe_name}"
+            file_bytes = item["bytes"]
+            content_type = item.get("mimetype") or "application/octet-stream"
 
-    if extension in IMAGE_EXTENSIONS:
-        return pytesseract.image_to_string(Image.open(BytesIO(file_bytes))).strip()
+            database_service.upload_to_storage("documents", storage_path, file_bytes, content_type)
 
-    if extension in PDF_EXTENSIONS:
-        pages: list[str] = []
-        with fitz.open(stream=file_bytes, filetype="pdf") as pdf_doc:
-            for page in pdf_doc:
-                pages.append(page.get_text("text") or "")
-        return "\n".join(pages).strip()
+            try:
+                extraction_result = text_extractor.extract_document(file_name, file_bytes, content_type)
+                extracted_text = extraction_result["content_text"]
+                file_size = int(extraction_result["file_size"])
+                mime_type = str(extraction_result["mime_type"])
+                print(
+                    f"[text.extract] file={file_name} chars={len(extracted_text)} extension={os.path.splitext(file_name.lower())[1]}"
+                )
+            except Exception as text_exc:  # noqa: BLE001
+                warning = {"file": file_name, "error": str(text_exc)}
+                warnings.append(warning)
+                print(f"[text.extract.error] file={file_name} error={text_exc}")
+                extracted_text = ""
+                file_size = len(file_bytes)
+                mime_type = content_type
 
-    if extension in TEXT_EXTENSIONS:
-        try:
-            return file_bytes.decode("utf-8").strip()
-        except UnicodeDecodeError:
-            return file_bytes.decode("latin-1", errors="ignore").strip()
+            if not extracted_text:
+                print(f"[classification.input] file={file_name} has empty extracted text; using filename-only classification")
 
-    return ""
+            try:
+                category, confidence = classify_document(file_name, extracted_text)
+            except Exception as classify_exc:  # noqa: BLE001
+                warning = {"file": file_name, "error": f"classification failed: {classify_exc}"}
+                warnings.append(warning)
+                print(f"[classification.error] file={file_name} error={classify_exc}")
+                category, confidence = "uncategorized", 0
 
+            final_path = storage_path
+            db_status = "classified"
 
-def _classify_text_by_keywords(text: str) -> dict[str, Any]:
-    normalized = (text or "").lower()
-    best_category = "Uncategorized"
-    best_score = 0
+            if (category or "uncategorized").strip().lower() == "uncategorized":
+                final_path = storage_path  # keep in uploads/
+                db_status = "uncategorized"
+            else:
+                classified_path = f"classified/{category}/{storage_path.split('/')[-1]}"
+                try:
+                    supabase.storage.from_("documents").move(storage_path, classified_path)
+                    final_path = classified_path
+                    db_status = "classified"
+                    print(f"[storage.move] Successfully moved to {final_path}")
+                except Exception as move_exc:  # noqa: BLE001
+                    print(f"[storage.move] Failed: {move_exc}, keeping in uploads/")
+                    final_path = storage_path
+                    db_status = "uncategorized"
+                    category = "uncategorized"
+                    confidence = 0
 
-    for category, keywords in KEYWORD_RULES.items():
-        score = sum(1 for keyword in keywords if keyword in normalized)
-        if score > best_score:
-            best_score = score
-            best_category = category
+            if category == "uncategorized":
+                db_status = "uncategorized"
 
-    confidence = round(min(best_score / 3, 1.0), 2) if best_score else 0
-    return {"category": best_category, "confidence": confidence}
+            database_service.insert_document(
+                file_name,
+                final_path,
+                extracted_text,
+                file_size,
+                mime_type,
+                category,
+                confidence,
+                db_status,
+            )
+
+            details.append(
+                {
+                    "file": file_name,
+                    "category": category,
+                    "confidence": confidence,
+                    "destination": final_path,
+                }
+            )
+
+            _set_job_state(
+                job_id,
+                {
+                    "job_id": job_id,
+                    "status": "processing",
+                    "message": "Processing files in background.",
+                    "processed": index,
+                    "total": len(files_payload),
+                    "details": details,
+                    "warnings": warnings,
+                },
+            )
+
+        _set_job_state(
+            job_id,
+            {
+                "job_id": job_id,
+                "status": "completed",
+                "message": "Background processing complete.",
+                "processed": len(files_payload),
+                "total": len(files_payload),
+                "details": details,
+                "warnings": warnings,
+                "source": "local_flask_background",
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        _set_job_state(
+            job_id,
+            {
+                "job_id": job_id,
+                "status": "failed",
+                "message": "Background processing failed.",
+                "error": str(exc),
+                "processed": len(details),
+                "total": len(files_payload),
+                "details": details,
+                "warnings": warnings,
+            },
+        )
+        print(f"[background.error] job_id={job_id} error={exc}")
 
 
 @app.route("/", methods=["GET"])
@@ -112,71 +195,58 @@ def classify_documents():
     if not valid_files:
         return jsonify({"error": "No files were uploaded."}), 400
 
-    uploaded_paths: list[dict[str, str]] = []
-    extracted_text_by_file: dict[str, str] = {}
-    extraction_errors: list[dict[str, str]] = []
+    files_payload: list[dict[str, Any]] = []
 
     try:
         for file in valid_files:
-            safe_name = secure_filename(file.filename)
-            object_path = f"uploads/{uuid.uuid4().hex}_{safe_name}"
             file_bytes = file.read()
 
             if not file_bytes:
                 continue
 
-            storage_response = supabase.storage.from_("documents").upload(
-                object_path,
-                file_bytes,
-                {"upsert": "true", "content-type": file.mimetype or "application/octet-stream"},
-            )
-            print(f"[storage.upload] file={file.filename} path={object_path} response={storage_response}")
-
-            extracted_text = ""
-            try:
-                extracted_text = _extract_text_from_file(file.filename, file_bytes)
-                extracted_text_by_file[file.filename] = extracted_text
-                print(
-                    f"[text.extract] file={file.filename} chars={len(extracted_text)} extension={os.path.splitext(file.filename.lower())[1]}"
-                )
-            except Exception as text_exc:  # noqa: BLE001
-                extraction_errors.append({"file": file.filename, "error": str(text_exc)})
-                print(f"[text.extract.error] file={file.filename} error={text_exc}")
-
-            insert_payload = {
-                "file_name": file.filename,
-                "folder_location": object_path,
-                "content_text": extracted_text,
-            }
-            table_insert_response = supabase.table("documents").insert(insert_payload).execute()
-            print(
-                f"[table.insert] file={file.filename} path={object_path} response={_debug_response_payload(table_insert_response)}"
-            )
-
-            uploaded_paths.append({"file": file.filename, "path": object_path, "ocr_text": extracted_text})
-
-        if not uploaded_paths:
-            return jsonify({"error": "Uploaded files were empty."}), 400
-
-        details = []
-        for entry in uploaded_paths:
-            keyword_result = _classify_text_by_keywords(entry.get("ocr_text", ""))
-            details.append(
+            files_payload.append(
                 {
-                    "file": entry["file"],
-                    "category": keyword_result["category"],
-                    "confidence": keyword_result["confidence"],
-                    "destination": entry["path"],
+                    "filename": file.filename,
+                    "mimetype": file.mimetype,
+                    "bytes": file_bytes,
                 }
             )
 
-        data = {"details": details, "source": "local_flask"}
+        if not files_payload:
+            return jsonify({"error": "Uploaded files were empty."}), 400
 
-        # If OCR failed for any image, include warnings without failing the full request.
-        if extraction_errors:
-            data["ocr_warnings"] = extraction_errors
+        job_id = uuid.uuid4().hex
+        _set_job_state(
+            job_id,
+            {
+                "job_id": job_id,
+                "status": "queued",
+                "message": "Upload received. Processing will start shortly.",
+                "processed": 0,
+                "total": len(files_payload),
+                "details": [],
+                "warnings": [],
+            },
+        )
 
-        return jsonify(data), 200
+        worker = threading.Thread(
+            target=_run_background_processing,
+            args=(job_id, files_payload),
+            daemon=True,
+        )
+        worker.start()
+
+        return (
+            jsonify(
+                {
+                    "job_id": job_id,
+                    "status": "queued",
+                    "message": "Upload received! Processing in background.",
+                    "total": len(files_payload),
+                }
+            ),
+            202,
+        )
 
     except Exception as exc:  # noqa: BLE001
         error_message = str(exc)
@@ -217,6 +287,15 @@ def classify_documents():
         return jsonify({"error": error_message, "details": combined_error}), 500
 
 
+@app.route("/api/jobs/<job_id>", methods=["GET"])
+def get_job_status(job_id: str):
+    with job_lock:
+        job = job_store.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found."}), 404
+    return jsonify(job), 200
+
+
 @app.route("/search", methods=["GET"])
 def search_documents():
     query = request.args.get("q", "").strip()
@@ -225,13 +304,7 @@ def search_documents():
 
     try:
         print(f"[search] query={query}")
-        response = (
-            supabase.table("documents")
-            .select("*")
-            .text_search("content_text", query)
-            .execute()
-        )
-        print(f"[search.response] payload={_debug_response_payload(response)}")
+        response = database_service.search_documents(query)
         return jsonify({"results": response.data or []}), 200
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": str(exc)}), 500
