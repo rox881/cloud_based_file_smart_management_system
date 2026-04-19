@@ -46,6 +46,56 @@ class DatabaseService:
         print(f"[table.insert] file={file_name} path={folder_location} response={self.debug_payload(response)}")
         return response
 
+    def create_file_share(
+        self,
+        file_name: str,
+        storage_path: str,
+        recipient_email: str,
+        share_token: str,
+        permission: str = "view",
+        status: str = "pending",
+        message: str | None = None,
+        expires_at: str | None = None,
+    ) -> Any:
+        payload = {
+            "file_name": file_name,
+            "storage_path": storage_path,
+            "recipient_email": recipient_email,
+            "permission": permission,
+            "share_token": share_token,
+            "status": status,
+            "message": message,
+            "expires_at": expires_at,
+        }
+        response = self.supabase.table("file_shares").insert(payload).execute()
+        print(
+            f"[table.insert] share_token={share_token} file={file_name} recipient={recipient_email} "
+            f"response={self.debug_payload(response)}"
+        )
+        return response
+
+    def list_file_shares(self, limit: int = 20) -> Any:
+        safe_limit = max(1, min(int(limit), 100))
+        response = (
+            self.supabase.table("file_shares")
+            .select("id,file_name,storage_path,recipient_email,permission,status,share_token,message,created_at,expires_at")
+            .order("created_at", desc=True)
+            .limit(safe_limit)
+            .execute()
+        )
+        print(f"[shares.list] limit={safe_limit} response={self.debug_payload(response)}")
+        return response
+
+    def update_file_share_status(self, share_token: str, status: str) -> Any:
+        response = (
+            self.supabase.table("file_shares")
+            .update({"status": status})
+            .eq("share_token", share_token)
+            .execute()
+        )
+        print(f"[shares.update] share_token={share_token} status={status} response={self.debug_payload(response)}")
+        return response
+
     def search_documents(self, query: str) -> Any:
         response = (
             self.supabase.table("documents")

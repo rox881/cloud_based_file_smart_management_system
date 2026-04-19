@@ -170,6 +170,37 @@
     <!-- Toast container -->
     <div class="toast-container" id="toastContainer"></div>
 
+    <!-- Share modal -->
+    <div class="modal-overlay" id="shareModal" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="shareModalTitle">
+            <div class="modal-header">
+                <h3 class="modal-title" id="shareModalTitle">Share File</h3>
+                <button class="modal-close" id="shareModalClose" type="button" aria-label="Close share dialog">×</button>
+            </div>
+            <form id="shareForm" class="modal-form">
+                <div class="modal-field">
+                    <label class="modal-label" for="shareRecipientEmail">Recipient Email</label>
+                    <input class="modal-input" id="shareRecipientEmail" type="email" required placeholder="name@example.com" autocomplete="email">
+                </div>
+                <div class="modal-field">
+                    <label class="modal-label" for="sharePermission">Permission</label>
+                    <select class="modal-select" id="sharePermission">
+                        <option value="view">view</option>
+                        <option value="download">download</option>
+                    </select>
+                </div>
+                <div class="modal-field">
+                    <label class="modal-label" for="shareMessage">Message (optional)</label>
+                    <textarea class="modal-textarea" id="shareMessage" rows="3" placeholder="Add a note for recipient"></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-outline" id="shareCancelBtn" type="button">Cancel</button>
+                    <button class="btn btn-primary" id="shareSubmitBtn" type="submit">Send Share</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
 </body>
 </html>

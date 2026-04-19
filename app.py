@@ -1,7 +1,11 @@
 import os
+import re
+import smtplib
 import threading
 import uuid
+from email.message import EmailMessage
 from typing import Any
+from ssl import create_default_context
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
@@ -19,6 +23,12 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASS = os.getenv("SMTP_PASS")
+SMTP_FROM = os.getenv("SMTP_FROM")
+
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY in environment variables.")
 
@@ -32,9 +42,68 @@ job_store: dict[str, dict[str, Any]] = {}
 job_lock = threading.Lock()
 
 
+EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
 def _set_job_state(job_id: str, state: dict[str, Any]) -> None:
     with job_lock:
         job_store[job_id] = state
+
+
+def _is_valid_email(email: str) -> bool:
+    return bool(EMAIL_REGEX.match(email or ""))
+
+
+def _smtp_is_configured() -> bool:
+    return bool(SMTP_HOST and SMTP_USER and SMTP_PASS and SMTP_FROM)
+
+
+def _send_share_email(
+    recipient_email: str,
+    file_name: str,
+    storage_path: str,
+    share_token: str,
+    permission: str,
+    message: str | None,
+) -> None:
+    if not _smtp_is_configured():
+        raise RuntimeError("SMTP is not configured.")
+
+    email_message = EmailMessage()
+    email_message["Subject"] = f"File shared with you: {file_name}"
+    email_message["From"] = SMTP_FROM
+    email_message["To"] = recipient_email
+
+    custom_message = message.strip() if isinstance(message, str) else ""
+    email_body_lines = [
+        "A file has been shared with you.",
+        "",
+        f"File: {file_name}",
+        f"Storage Path: {storage_path}",
+        f"Permission: {permission}",
+        f"Share Token: {share_token}",
+    ]
+
+    if custom_message:
+        email_body_lines.extend(["", f"Message from sender: {custom_message}"])
+
+    email_message.set_content("\n".join(email_body_lines))
+
+    try:
+        if SMTP_PORT == 465:
+            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=20, context=create_default_context()) as smtp:
+                smtp.login(SMTP_USER, SMTP_PASS)
+                smtp.send_message(email_message)
+        else:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as smtp:
+                smtp.ehlo()
+                smtp.starttls(context=create_default_context())
+                smtp.ehlo()
+                smtp.login(SMTP_USER, SMTP_PASS)
+                smtp.send_message(email_message)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[smtp.error] {type(exc).__name__}: {exc}")
+        raise
 
 
 def _run_background_processing(job_id: str, files_payload: list[dict[str, Any]]) -> None:
@@ -294,6 +363,104 @@ def get_job_status(job_id: str):
     if not job:
         return jsonify({"error": "Job not found."}), 404
     return jsonify(job), 200
+
+
+@app.route("/api/share", methods=["POST"])
+def share_document():
+    payload = request.get_json(silent=True) or {}
+
+    file_name = str(payload.get("file_name", "")).strip()
+    storage_path = str(payload.get("storage_path", "")).strip()
+    recipient_email = str(payload.get("recipient_email", "")).strip().lower()
+    permission = str(payload.get("permission", "view")).strip().lower() or "view"
+    message = payload.get("message")
+    expires_at = payload.get("expires_at")
+
+    if not file_name:
+        return jsonify({"error": "Missing required field: file_name"}), 400
+    if not storage_path:
+        return jsonify({"error": "Missing required field: storage_path"}), 400
+    if not recipient_email:
+        return jsonify({"error": "Missing required field: recipient_email"}), 400
+    if not _is_valid_email(recipient_email):
+        return jsonify({"error": "Invalid recipient email format."}), 400
+    if permission not in {"view", "download"}:
+        return jsonify({"error": "Invalid permission. Allowed values: view, download."}), 400
+
+    share_token = uuid.uuid4().hex
+    email_sent = False
+    warning_message = None
+    smtp_error = None
+
+    try:
+        response = database_service.create_file_share(
+            file_name=file_name,
+            storage_path=storage_path,
+            recipient_email=recipient_email,
+            share_token=share_token,
+            permission=permission,
+            status="pending",
+            message=str(message).strip() if message is not None else None,
+            expires_at=str(expires_at).strip() if expires_at is not None else None,
+        )
+
+        if _smtp_is_configured():
+            try:
+                _send_share_email(
+                    recipient_email=recipient_email,
+                    file_name=file_name,
+                    storage_path=storage_path,
+                    share_token=share_token,
+                    permission=permission,
+                    message=str(message).strip() if message is not None else None,
+                )
+                email_sent = True
+
+                try:
+                    database_service.update_file_share_status(share_token=share_token, status="sent")
+                except Exception as status_exc:  # noqa: BLE001
+                    warning_message = f"Email sent, but failed to update share status: {status_exc}"
+            except Exception as mail_exc:  # noqa: BLE001
+                smtp_error = f"{type(mail_exc).__name__}: {mail_exc}"
+                warning_message = f"Share saved, but email could not be sent: {smtp_error}"
+        else:
+            warning_message = "Share saved. SMTP is not configured, so no email was sent."
+
+        result_message = "Share record created and email sent." if email_sent else "Share record created."
+        return (
+            jsonify(
+                {
+                    "message": result_message,
+                    "share_token": share_token,
+                    "email_sent": email_sent,
+                    "warning": warning_message,
+                    "smtp_error": smtp_error,
+                    "share": response.data[0] if getattr(response, "data", None) else None,
+                }
+            ),
+            201,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/shares", methods=["GET"])
+def list_shares():
+    raw_limit = request.args.get("limit", "20").strip()
+
+    try:
+        limit = int(raw_limit)
+    except ValueError:
+        return jsonify({"error": "Invalid limit. Use an integer value."}), 400
+
+    if limit < 1 or limit > 100:
+        return jsonify({"error": "Invalid limit. Allowed range is 1 to 100."}), 400
+
+    try:
+        response = database_service.list_file_shares(limit=limit)
+        return jsonify({"shares": response.data or [], "count": len(response.data or [])}), 200
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/search", methods=["GET"])

@@ -119,7 +119,17 @@ Create a `.env` file in the project root with:
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_service_role_or_server_key
 TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your_smtp_username
+SMTP_PASS=your_smtp_password
+SMTP_FROM=no-reply@example.com
 ```
+
+Notes:
+
+- Share records can still be created if SMTP is not configured.
+- Email delivery for shares works only when SMTP variables are set.
 
 ## Local Setup
 
@@ -140,6 +150,50 @@ python app.py
 Open the local Flask URL shown in the terminal, usually:
 
 - `http://127.0.0.1:5000`
+
+## Share API Manual Test (PowerShell)
+
+After starting the app locally, you can test the share endpoint directly.
+
+```powershell
+$body = @{
+  file_name = "sample.pdf"
+  storage_path = "classified/invoice/1234_sample.pdf"
+  recipient_email = "recipient@example.com"
+  permission = "view"
+  message = "Please review this file"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post \
+  -Uri "http://127.0.0.1:5000/api/share" \
+  -ContentType "application/json" \
+  -Body $body
+```
+
+Expected response fields:
+
+- `message`
+- `share_token`
+- `email_sent`
+- `warning` (present when SMTP is missing or email send fails)
+- `share`
+
+## Shares Debug API (PowerShell)
+
+Use this endpoint to fetch recent share records for troubleshooting.
+
+```powershell
+Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:5000/api/shares?limit=10"
+```
+
+Query params:
+
+- `limit` (optional): integer from `1` to `100`, default `20`
+
+Expected response fields:
+
+- `shares` (array)
+- `count` (number of returned rows)
 
 ## Search Behavior
 

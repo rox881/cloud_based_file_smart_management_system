@@ -35,11 +35,58 @@ const searchResultsCount     = document.getElementById("searchResultsCount");
 const searchResultsContainer = document.getElementById("searchResultsContainer");
 
 const toastContainer = document.getElementById("toastContainer");
+const shareModal = document.getElementById("shareModal");
+const shareForm = document.getElementById("shareForm");
+const shareModalClose = document.getElementById("shareModalClose");
+const shareCancelBtn = document.getElementById("shareCancelBtn");
+const shareRecipientEmail = document.getElementById("shareRecipientEmail");
+const sharePermission = document.getElementById("sharePermission");
+const shareMessageInput = document.getElementById("shareMessage");
+const shareSubmitBtn = document.getElementById("shareSubmitBtn");
 
 // --- State ---
 let uploadedFiles = [];
 let activeJobId   = null;
 let pollTimer     = null;
+let currentClassificationDetails = [];
+let currentSearchResults = [];
+let pendingShareEntry = null;
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+shareForm.addEventListener("submit", submitShareForm);
+shareModalClose.addEventListener("click", closeShareModal);
+shareCancelBtn.addEventListener("click", closeShareModal);
+shareModal.addEventListener("click", (event) => {
+    if (event.target === shareModal) {
+        closeShareModal();
+    }
+});
+
+resultsContainer.addEventListener("click", (event) => {
+    const button = event.target.closest(".share-result-btn");
+    if (!button) return;
+
+    const index = Number(button.dataset.index);
+    const entry = currentClassificationDetails[index];
+    if (!entry) return;
+
+    shareResultEntry(entry);
+});
+
+searchResultsContainer.addEventListener("click", (event) => {
+    const button = event.target.closest(".share-search-btn");
+    if (!button) return;
+
+    const index = Number(button.dataset.index);
+    const entry = currentSearchResults[index];
+    if (!entry) return;
+
+    shareResultEntry({
+        file: entry.file_name || "Unknown file",
+        destination: entry.folder_location || "",
+    });
+});
 
 // --- Sidebar ---
 sidebarToggle.addEventListener("click", () => {
@@ -298,9 +345,91 @@ async function searchDocuments() {
     }
 }
 
+async function shareResultEntry(entry) {
+    const storagePath = entry.destination || "";
+    if (!storagePath) {
+        showToast("error", "Share Failed", "Missing storage path for this file.");
+        return;
+    }
+
+    pendingShareEntry = {
+        file: entry.file || "",
+        destination: storagePath,
+    };
+    openShareModal();
+}
+
+function openShareModal() {
+    shareForm.reset();
+    sharePermission.value = "view";
+    shareModal.hidden = false;
+    shareRecipientEmail.focus();
+}
+
+function closeShareModal() {
+    shareModal.hidden = true;
+    pendingShareEntry = null;
+}
+
+async function submitShareForm(event) {
+    event.preventDefault();
+
+    if (!pendingShareEntry) {
+        showToast("error", "Share Failed", "No file selected for sharing.");
+        closeShareModal();
+        return;
+    }
+
+    const recipientEmail = shareRecipientEmail.value.trim().toLowerCase();
+    const permission = sharePermission.value.trim().toLowerCase() || "view";
+    const noteMessage = shareMessageInput.value.trim() || null;
+
+    if (!recipientEmail) {
+        showToast("error", "Share Failed", "Recipient email is required.");
+        return;
+    }
+    if (!EMAIL_REGEX.test(recipientEmail)) {
+        showToast("error", "Share Failed", "Please enter a valid email address.");
+        return;
+    }
+    if (!["view", "download"].includes(permission)) {
+        showToast("error", "Share Failed", "Permission must be either view or download.");
+        return;
+    }
+
+    shareSubmitBtn.disabled = true;
+
+    try {
+        const response = await fetch("/api/share", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                file_name: pendingShareEntry.file || "",
+                storage_path: pendingShareEntry.destination,
+                recipient_email: recipientEmail,
+                permission,
+                message: noteMessage,
+            }),
+        });
+
+        const data = await parseJsonGuarded(response);
+        const responseMessage = data.message || `Share record created for ${recipientEmail}.`;
+        showToast("success", "Share Created", responseMessage);
+        if (data.warning) {
+            showToast("error", "Share Warning", String(data.warning));
+        }
+        closeShareModal();
+    } catch (error) {
+        showToast("error", "Share Failed", error.message);
+    } finally {
+        shareSubmitBtn.disabled = false;
+    }
+}
+
 // --- Render: Classification Results ---
 function renderClassifyResults(data) {
     const details = Array.isArray(data.details) ? data.details : [];
+    currentClassificationDetails = details;
 
     resultsSection.hidden = false;
     resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -329,11 +458,12 @@ function renderClassifyResults(data) {
 
     resultsContainer.innerHTML = `
         <div class="result-grid">
-            ${details.map((entry) => {
+            ${details.map((entry, index) => {
                 const confidence = entry.confidence ?? 0;
                 const confidencePct = Math.min(100, confidence);
                 const category = entry.category || "uncategorized";
                 const isUncategorized = category.toLowerCase() === "uncategorized";
+                const canShare = Boolean(entry.destination);
 
                 return `
                     <div class="result-card">
@@ -352,6 +482,9 @@ function renderClassifyResults(data) {
                                 </div>
                             </div>
                         </div>
+                        <div class="result-card-actions" style="margin-top:10px;">
+                            <button class="btn btn-outline btn-sm share-result-btn" type="button" data-index="${index}" ${canShare ? "" : "disabled"}>Share</button>
+                        </div>
                         ${entry.destination ? `<div class="result-card-destination">📂 ${escapeHtml(entry.destination)}</div>` : ""}
                     </div>
                 `;
@@ -364,6 +497,8 @@ function renderClassifyResults(data) {
 
 // --- Render: Search Results ---
 function renderSearchResults(query, results) {
+    currentSearchResults = results;
+
     if (!results.length) {
         searchResultsCount.textContent = "";
         searchResultsContainer.innerHTML = `
@@ -393,16 +528,20 @@ function renderSearchResults(query, results) {
                         <th>Category</th>
                         <th>Size</th>
                         <th>Type</th>
+                        <th>Share</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${results.map((entry) => `
+                    ${results.map((entry, index) => `
                         <tr>
                             <td class="cell-file">${escapeHtml(entry.file_name || "Unknown")}</td>
                             <td>${escapeHtml(entry.folder_location || "-")}</td>
                             <td><span class="badge-category">${escapeHtml(entry.category || "-")}</span></td>
                             <td>${typeof entry.file_size === "number" ? formatFileSize(entry.file_size) : (entry.file_size || "-")}</td>
                             <td>${escapeHtml(entry.mime_type || "-")}</td>
+                            <td>
+                                <button class="btn btn-outline btn-sm share-search-btn" type="button" data-index="${index}" ${entry.folder_location ? "" : "disabled"}>Share</button>
+                            </td>
                         </tr>
                     `).join("")}
                 </tbody>
