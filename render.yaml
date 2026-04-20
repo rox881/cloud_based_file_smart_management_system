@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: cloud-file-smart-management
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /api/health/supabase
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: NEAR_DUPLICATE_THRESHOLD
+        value: "0.92"
+      - key: TESSERACT_CMD
+        value: /usr/bin/tesseract

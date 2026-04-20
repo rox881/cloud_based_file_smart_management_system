@@ -170,6 +170,48 @@ Open the local Flask URL shown in the terminal, usually:
 
 - `http://127.0.0.1:5000`
 
+## Production Deployment (Render)
+
+This repository is deployment-ready for Render using Docker.
+
+### 1. Push code to GitHub
+
+Render deploys from your repository, so ensure your latest changes are pushed.
+
+### 2. Create a Web Service in Render
+
+You can deploy in either way:
+
+- Recommended: create a **Blueprint** service from `render.yaml`
+- Alternative: create a standard Web Service and point it to the included `Dockerfile`
+
+Included deployment files:
+
+- `Dockerfile`
+- `.dockerignore`
+- `render.yaml`
+
+### 3. Configure environment variables in Render
+
+Set these in Render dashboard (or via Blueprint secret values):
+
+- `SUPABASE_URL`
+- `SUPABASE_KEY` (must be service_role)
+- `ADMIN_EMAILS` (comma-separated)
+- `NEAR_DUPLICATE_THRESHOLD` (optional, default `0.92`)
+- `TESSERACT_CMD` (default `/usr/bin/tesseract`)
+
+### 4. Deploy and verify health
+
+After deployment, check:
+
+- `/api/health/supabase` returns successful probe
+- login, upload, search, download/share, and delete flow all work
+
+### 5. Important runtime note
+
+Current background processing uses in-memory job state and threads. Start with a single instance for predictable behavior. For horizontal scaling later, move jobs/state to a shared queue (Redis/Celery or similar).
+
 ## Search Behavior
 
 Search supports three modes via `/search?q=...&mode=...`:
