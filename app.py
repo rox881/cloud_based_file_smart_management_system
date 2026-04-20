@@ -69,9 +69,10 @@ def _validate_supabase_server_key(token: str) -> None:
 _validate_supabase_server_key(SUPABASE_KEY)
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+auth_supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 set_supabase_client(supabase)
 app = Flask(__name__)
-database_service = DatabaseService(supabase)
+database_service = DatabaseService(supabase, auth_client=auth_supabase)
 text_extractor = TextExtractorService(OCRService(), PDFService())
 semantic_search_service = SemanticSearchService()
 summarizer_service = SummarizerService()

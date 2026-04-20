@@ -76,8 +76,11 @@ def _has_content_hash(supabase: Client) -> bool:
 
 
 class DatabaseService:
-    def __init__(self, supabase_client: Client) -> None:
+    def __init__(self, supabase_client: Client, auth_client: Client | None = None) -> None:
         self.supabase = supabase_client
+        # Keep auth operations isolated so user-session changes do not affect
+        # backend storage/table calls that must run with service-role context.
+        self.auth_supabase = auth_client or supabase_client
 
     def _document_select_columns(self, include_content_text: bool = False) -> str:
         cols = [
@@ -111,7 +114,7 @@ class DatabaseService:
         """
         try:
             # We use the admin API to bypass email confirmation / rate limits
-            response = self.supabase.auth.admin.create_user({
+            response = self.auth_supabase.auth.admin.create_user({
                 "email": email,
                 "password": password,
                 "email_confirm": True,
@@ -130,7 +133,7 @@ class DatabaseService:
             
             # Fallback to standard signup if admin isn't working for some reason
             print(f"[auth.admin.signup.failed] {e} -> fallback to standard signup")
-            return self.supabase.auth.sign_up({
+            return self.auth_supabase.auth.sign_up({
                 "email": email,
                 "password": password,
                 "options": {"data": {"full_name": name}}
@@ -138,7 +141,7 @@ class DatabaseService:
 
     def sign_in(self, email: str, password: str) -> Any:
         try:
-            response = self.supabase.auth.sign_in_with_password({
+            response = self.auth_supabase.auth.sign_in_with_password({
                 "email": email,
                 "password": password
             })
@@ -149,7 +152,7 @@ class DatabaseService:
                 print(f"[auth.signin] Auto-confirming unconfirmed user: {email}")
                 self.confirm_user_by_email(email)
                 # Retry sign-in
-                return self.supabase.auth.sign_in_with_password({
+                return self.auth_supabase.auth.sign_in_with_password({
                     "email": email,
                     "password": password
                 })
@@ -162,9 +165,9 @@ class DatabaseService:
 
         # supabase-py signatures may vary by version.
         try:
-            return self.supabase.auth.refresh_session(refresh_token)
+            return self.auth_supabase.auth.refresh_session(refresh_token)
         except TypeError:
-            return self.supabase.auth.refresh_session({"refresh_token": refresh_token})
+            return self.auth_supabase.auth.refresh_session({"refresh_token": refresh_token})
 
     def resolve_login_identifier_to_email(self, identifier: str) -> str:
         """Allow login with either email or username-like identifier."""
@@ -176,7 +179,7 @@ class DatabaseService:
 
         # If a username is provided, map it to email via auth admin users.
         try:
-            users_res = self.supabase.auth.admin.list_users()
+            users_res = self.auth_supabase.auth.admin.list_users()
             users = users_res if isinstance(users_res, list) else getattr(users_res, "users", [])
             ident_lower = ident.lower()
 
@@ -204,9 +207,9 @@ class DatabaseService:
         # Support multiple supabase-py auth signatures across versions.
         response = None
         try:
-            response = self.supabase.auth.get_user(access_token)
+            response = self.auth_supabase.auth.get_user(access_token)
         except TypeError:
-            response = self.supabase.auth.get_user(jwt=access_token)
+            response = self.auth_supabase.auth.get_user(jwt=access_token)
 
         user = getattr(response, "user", None)
         if user is None and isinstance(response, dict):
@@ -234,13 +237,13 @@ class DatabaseService:
         try:
             # list_users doesn't support server-side filtering in most py clients yet, 
             # so we fetch and find (usually fine for small dev projects)
-            users_res = self.supabase.auth.admin.list_users()
+            users_res = self.auth_supabase.auth.admin.list_users()
             # Depending on version, it might be a list or have a 'users' attribute
             users = users_res if isinstance(users_res, list) else getattr(users_res, 'users', [])
             
             for u in users:
                 if getattr(u, 'email', '').lower() == email.lower():
-                    self.supabase.auth.admin.update_user_by_id(
+                    self.auth_supabase.auth.admin.update_user_by_id(
                         u.id, 
                         {"email_confirm": True}
                     )

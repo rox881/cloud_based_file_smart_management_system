@@ -1,235 +1,248 @@
-# Cloud Based File Smart Management System
+# Cloud-Based File Smart Management System
 
-A Flask + Supabase application for uploading, classifying, storing, and searching documents with automatic text extraction and cloud-backed metadata.
+Cloud-native document management platform built with Flask and Supabase. The system ingests user files, extracts text, classifies content, stores metadata, and supports secure multi-user access with search, sharing, and admin management features.
 
-## What it does
+## Live Deployment
 
-This project lets you:
+Production URL: https://cloud-file-smart-management.onrender.com/
 
-- Upload files through a web UI
-- Extract text from images, PDFs, TXT files, and DOCX files
-- Classify documents using cloud-stored category rules from Supabase
-- Move classified files into `classified/<category>/...` folders in Supabase Storage
-- Keep uncategorized files in `uploads/`
-- Save searchable metadata into the `documents` table
-- Search documents with hybrid retrieval (PostgreSQL full-text + semantic vector similarity)
-- Generate automatic extractive summaries for each uploaded document
-- Detect exact duplicates (SHA-256 hash) and near-duplicates (semantic similarity)
-- Enforce a per-user 50MB storage quota
+## Overview
 
-## Why it exists
+This project provides an end-to-end workflow for smart document handling:
 
-The goal is to build a smart file management workflow that combines:
+- Authentication-based user access
+- Multi-file upload with asynchronous background processing
+- OCR and text extraction from common document formats
+- Rule-driven classification using cloud-managed categories
+- Cloud storage organization by user and category
+- Metadata persistence in Supabase Postgres
+- Hybrid search (keyword + semantic)
+- Duplicate and near-duplicate handling
+- Signed URL download/share flow
+- Admin dashboard for global document and category operations
 
-- local Flask processing for responsiveness
-- Supabase Storage for file persistence
-- Supabase Postgres for searchable metadata
-- Supabase-driven classification rules for easy category updates without code changes
+## Core Features
 
-## How it works
+1. Secure multi-user login and signup
+2. Document ingestion for PDF, DOCX, TXT, PNG, JPG, JPEG
+3. OCR support via Tesseract for image-based text
+4. Automatic category classification and confidence scoring
+5. User-level storage quota enforcement (50 MB)
+6. Background job tracking for upload/classification status
+7. Hybrid search:
+   - keyword full-text search
+   - semantic retrieval
+   - hybrid merge mode
+8. Summary generation for extracted content
+9. Exact and near-duplicate detection
+10. User file actions:
+   - download via signed URL
+   - share via signed URL
+   - delete own files
+11. Admin functionality:
+   - stats and document overview
+   - document edit/delete
+   - category create/update/delete
 
-1. A user uploads one or more files in the browser.
-2. Flask receives the files and starts a background thread immediately.
-3. The background worker:
-   - uploads each file to Supabase Storage
-   - extracts text from the file
-   - classifies the file using categories stored in Supabase
-   - moves the file into a category folder if it is classified
-   - writes metadata into the `documents` table
-4. The browser polls job status until processing is complete.
-5. Search uses the `search_vector` column to find matching documents.
+## Architecture
 
-## Project Structure
+### Application Layer
+
+- Flask application server (`app.py`)
+- Background processing via local worker threads
+- Service-oriented design in `services/`
+
+### Data and Storage Layer
+
+- Supabase Postgres for document metadata and category rules
+- Supabase Storage bucket for file objects
+- Row-level security policies for user isolation
+
+### Processing Layer
+
+- `TextExtractorService` for format-specific extraction
+- `OCRService` for image OCR
+- `PDFService` for PDF text extraction
+- `classifier_service` for rule-based classification
+- `SemanticSearchService` for semantic retrieval and similarity
+- `SummarizerService` for extractive summaries
+
+## Technology Stack
+
+- Backend: Flask, Python
+- Cloud DB/Storage/Auth: Supabase
+- OCR: Tesseract + `pytesseract`
+- Document parsing: PyMuPDF, python-docx, Pillow
+- Production server: Gunicorn
+- Deployment: Render (Docker)
+
+## Repository Structure
 
 ```text
 app.py
 requirements.txt
+Dockerfile
+render.yaml
+run_migration.py
 services/
   classifier_service.py
   database_service.py
   ocr_service.py
   pdf_service.py
+  semantic_service.py
+  summarizer_service.py
   text_extractor_service.py
+sql/
+  add_created_by_column.sql
+  add_documents_category_confidence.sql
+  add_owner_user_id_column.sql
+  add_documents_summary_and_hash_columns.sql
+  add_permanent_rls_policies.sql
 static/
-  css/style.css
-  js/main.js
+  css/
+  js/
 templates/
   index.html
-sql/
-  add_documents_category_confidence.sql
+  login.html
+  admin.html
 ```
 
-## Supabase Setup
+## Local Development
 
-### 1. Create the tables
-
-Create or verify these tables in Supabase:
-
-#### `document_categories`
-Columns:
-- `category_name` text
-- `keywords` text[]
-- `extensions` text[]
-- `score_weight` numeric
-
-Example rows:
-
-- `invoice` | `{invoice,tax,gst,amount due,bill to}` | `{pdf,png,jpg,jpeg}` | `1`
-- `receipt` | `{receipt,paid,cash,total,transaction}` | `{pdf,png,jpg,jpeg}` | `1`
-- `contract` | `{agreement,contract,terms,party,signature}` | `{pdf,docx,txt}` | `1`
-
-#### `documents`
-Columns:
-- `file_name` text
-- `folder_location` text
-- `content_text` text
-- `file_size` integer
-- `mime_type` text
-- `category` text
-- `confidence` numeric
-- `status` text
-
-If needed, use the provided migration file:
-- [sql/add_documents_category_confidence.sql](sql/add_documents_category_confidence.sql)
-
-### 2. Create the storage bucket
-
-Create a Supabase Storage bucket named:
-
-- `documents`
-
-The app uploads files into this bucket and then moves them into:
-
-- `uploads/`
-- `classified/<category>/`
-
-### 3. Configure row-level security and policies
-
-Make sure your app credentials can:
-
-- insert into `documents`
-- select from `documents`
-- upload/move objects in the `documents` bucket
-- read from `document_categories`
-
-If you are using server-side service-role credentials, keep them on the backend only.
-
-For a permanent multi-user setup, run:
-
-- `sql/add_permanent_rls_policies.sql`
-
-This enforces:
-
-- users can only read/write their own rows in `documents`
-- users can only access storage objects under `users/<auth.uid()>/...` in bucket `documents`
-
-Also ensure your backend `.env` uses a valid **service_role** key for `SUPABASE_KEY`.
-
-## Environment Variables
-
-Create a `.env` file in the project root with:
-
-```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_service_role_or_server_key
-TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
-ADMIN_EMAILS=admin1@example.com,admin2@example.com
-NEAR_DUPLICATE_THRESHOLD=0.92
-```
-
-Notes:
-
-- The app now validates `SUPABASE_KEY` at startup and fails fast if it is not `service_role` or is expired.
-- Expired user access tokens are auto-refreshed via `/api/auth/refresh` when `refresh_token` is available.
-
-## Multi-user Security Notes
-
-- User-facing routes now require a valid `Authorization: Bearer <access_token>` header.
-- User identity is derived server-side from the access token (not from client `created_by` values).
-- Download/share links are restricted to files owned by the authenticated user.
-- If `documents.created_by` or `documents.owner_user_id` is unavailable, the app falls back to per-user storage path prefixes (`users/<auth_user_id>/...`) for ownership checks.
-- Admin routes require the authenticated email to be listed in `ADMIN_EMAILS`.
-
-## Local Setup
-
-### 1. Install dependencies
+1. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Start the app
+2. Run the app
 
 ```bash
 python app.py
 ```
 
-### 3. Open the browser
+3. Open in browser
 
-Open the local Flask URL shown in the terminal, usually:
-
-- `http://127.0.0.1:5000`
-
-## Search Behavior
-
-Search supports three modes via `/search?q=...&mode=...`:
-
-- `mode=keyword` : PostgreSQL full-text search (`search_vector`)
-- `mode=semantic` : hash-embedding semantic similarity
-- `mode=hybrid` (default) : merges keyword + semantic ranking
-
-Responses return:
-
-- `file_name`
-- `folder_location`
-- `file_size`
-- `mime_type`
-- `category`
-- `confidence`
-- `status`
-- `summary_text` (when migration is applied)
-- `semantic_score` / `search_type` (semantic or hybrid search)
-
-## Classification Behavior
-
-Classification is cloud-driven from `document_categories`.
-
-The classifier:
-
-- caches categories in memory for 5 minutes
-- scores filename matches more strongly than text matches
-- falls back safely if categories cannot be loaded
-- keeps uncategorized files in `uploads/`
-- moves classified files into `classified/<category>/`
-
-## Notes
-
-- OCR on images is optional and will not crash the job if it fails.
-- Background uploads are non-blocking so the UI stays responsive.
-- If a storage move fails, metadata is still saved with the original upload path.
-- Exact duplicate files are skipped during upload when hash metadata is available.
-- Near-duplicates are stored with `status=near-duplicate` and surfaced as warnings.
-- Quota limit is enforced server-side at 50MB per authenticated user.
-
-## SQL Migration
-
-To add the `category` and `confidence` columns if they are missing, run:
-
-```sql
-ALTER TABLE IF EXISTS public.documents
-ADD COLUMN IF NOT EXISTS category text,
-ADD COLUMN IF NOT EXISTS confidence numeric;
+```text
+http://127.0.0.1:5000
 ```
 
-For summaries and hash-based duplicate detection:
+## Database and Storage Setup (Supabase)
 
-```sql
-ALTER TABLE IF EXISTS public.documents
-ADD COLUMN IF NOT EXISTS summary_text text,
-ADD COLUMN IF NOT EXISTS content_hash text;
+1. Create/verify tables:
+- `documents`
+- `document_categories`
 
-CREATE INDEX IF NOT EXISTS idx_documents_content_hash ON public.documents (content_hash);
-```
+2. Create storage bucket:
+- `documents`
+
+3. Apply SQL migrations from the `sql/` directory.
+
+4. Apply permanent RLS policies:
+- `sql/add_permanent_rls_policies.sql`
+
+## API Surface (High-Level)
+
+### Authentication
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `POST /api/auth/refresh`
+
+### User Operations
+
+- `POST /api/classify`
+- `GET /api/jobs/<job_id>`
+- `GET /search`
+- `GET /api/my-documents`
+- `DELETE /api/my-documents`
+- `GET /api/user/stats`
+- `GET /api/download`
+- `GET /api/share`
+
+### Admin Operations
+
+- `GET /api/admin/stats`
+- `GET /api/admin/documents`
+- `GET /api/admin/documents/<doc_id>`
+- `PUT /api/admin/documents/<doc_id>`
+- `DELETE /api/admin/documents/<doc_id>`
+- `GET /api/admin/categories`
+- `POST /api/admin/categories`
+- `PUT /api/admin/categories/<cat_id>`
+- `DELETE /api/admin/categories/<cat_id>`
+
+### Health
+
+- `GET /api/health/supabase`
+
+## Search Modes
+
+`/search?q=<query>&mode=<mode>` supports:
+
+- `keyword`: full-text search
+- `semantic`: similarity-based retrieval
+- `hybrid`: merged ranking (default)
+
+## Deployment
+
+This repository includes production deployment files:
+
+- `Dockerfile`
+- `.dockerignore`
+- `render.yaml`
+
+Recommended host: Render (Docker runtime).
+
+Deployment checklist:
+
+1. Push repository to GitHub.
+2. Create Render service from `render.yaml` (Blueprint) or Dockerfile.
+3. Configure required runtime variables in hosting platform.
+4. Deploy and validate health endpoint.
+5. Execute smoke test (login, upload, search, download/share, delete, admin).
+
+## Operational Notes
+
+- Startup includes backend key validation checks.
+- User token refresh flow is supported.
+- Background processing currently uses in-memory job state.
+- For horizontal scaling, move queue/state to shared infrastructure.
+
+## Troubleshooting
+
+### Upload 403 (`new row violates row-level security policy`)
+
+Check:
+
+1. Storage and table RLS policies are correctly applied.
+2. Bucket path conventions match policy (`users/<uid>/...`).
+3. Backend is using service-role context for storage/table operations.
+
+### Auth 401 (`token is expired`)
+
+Check:
+
+1. Client session refresh flow is active.
+2. Browser stores both access and refresh tokens.
+
+### OCR issues
+
+Check:
+
+1. Tesseract is installed in runtime image.
+2. OCR command path is valid in runtime environment.
+
+## Academic Context
+
+This project demonstrates practical cloud-computing concepts:
+
+- managed cloud database/storage integration
+- secure multi-tenant access control
+- asynchronous backend processing
+- production deployment and operational readiness
+- search and intelligence features on top of cloud data
 
 ## License
 
