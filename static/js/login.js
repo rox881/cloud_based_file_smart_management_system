@@ -16,12 +16,22 @@ function switchTab(mode) {
     const errorEl      = document.getElementById('loginError');
     const successEl    = document.getElementById('regSuccess');
 
+    const registerActive = paneRegister.classList.contains('active-pane');
+    if ((mode === 'register' && registerActive) || (mode !== 'register' && !registerActive)) {
+        return;
+    }
+
     errorEl.hidden   = true;
     successEl.hidden = true;
 
+    paneLogin.classList.remove('pane-enter-left', 'pane-enter-right', 'pane-exit-left', 'pane-exit-right');
+    paneRegister.classList.remove('pane-enter-left', 'pane-enter-right', 'pane-exit-left', 'pane-exit-right');
+
     if (mode === 'register') {
+        paneLogin.classList.add('pane-exit-left');
         paneLogin.classList.remove('active-pane');
         paneLogin.classList.add('hidden-pane');
+        paneRegister.classList.add('pane-enter-right');
         paneRegister.classList.remove('hidden-pane');
         paneRegister.classList.add('active-pane');
         tabLogin.classList.remove('active');
@@ -29,8 +39,10 @@ function switchTab(mode) {
         tabRegister.setAttribute('aria-selected', 'true');
         tabLogin.setAttribute('aria-selected', 'false');
     } else {
+        paneRegister.classList.add('pane-exit-right');
         paneRegister.classList.remove('active-pane');
         paneRegister.classList.add('hidden-pane');
+        paneLogin.classList.add('pane-enter-left');
         paneLogin.classList.remove('hidden-pane');
         paneLogin.classList.add('active-pane');
         tabRegister.classList.remove('active');
@@ -38,6 +50,11 @@ function switchTab(mode) {
         tabLogin.setAttribute('aria-selected', 'true');
         tabRegister.setAttribute('aria-selected', 'false');
     }
+
+    setTimeout(() => {
+        paneLogin.classList.remove('pane-enter-left', 'pane-enter-right', 'pane-exit-left', 'pane-exit-right');
+        paneRegister.classList.remove('pane-enter-left', 'pane-enter-right', 'pane-exit-left', 'pane-exit-right');
+    }, 360);
 }
 
 /* ============================================================
@@ -394,6 +411,8 @@ window.addEventListener('DOMContentLoaded', () => {
     const params = new URLSearchParams(window.location.search);
     const mode   = params.get('mode');
     const path   = window.location.pathname;
+    const regSuccess = document.getElementById('regSuccess');
+    if (regSuccess) regSuccess.hidden = true;
 
     if (mode === 'register' || path === '/signup') {
         switchTab('register');

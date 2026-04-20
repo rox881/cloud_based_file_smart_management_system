@@ -40,7 +40,8 @@ body {
     background: var(--bg-root);
     color: var(--text-primary);
     min-height: 100vh;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 /* ============================================================
@@ -139,7 +140,7 @@ body {
     z-index: 1;
     display: grid;
     grid-template-columns: 1fr 480px;
-    min-height: 100vh;
+    min-height: 100dvh;
     animation: wrapperFadeIn 0.6s ease both;
 }
 
@@ -155,7 +156,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 60px 48px;
+    padding: min(6vh, 60px) 48px;
     position: relative;
     overflow: hidden;
 }
@@ -358,7 +359,7 @@ body {
     background: rgba(18,18,18,0.85);
     backdrop-filter: blur(24px);
     border-left: 1px solid var(--border);
-    padding: 40px 32px;
+    padding: min(5vh, 40px) 32px;
     position: relative;
     overflow-y: auto;
     animation: slideLeft 0.7s cubic-bezier(.4,0,.2,1) 0.1s both;
@@ -923,6 +924,74 @@ body {
     }
 
     .mobile-logo { display: flex; }
+}
+
+@media (max-height: 840px) {
+    .login-wrapper {
+        grid-template-columns: minmax(520px, 1fr) 440px;
+    }
+
+    .brand-content {
+        gap: 24px;
+        max-width: 420px;
+    }
+
+    .brand-headline h1 {
+        font-size: 32px;
+    }
+
+    .brand-tagline {
+        font-size: 14px;
+        line-height: 1.5;
+        margin-top: 10px;
+    }
+
+    .how-it-works {
+        gap: 8px;
+        align-items: flex-start;
+    }
+
+    .category-preview {
+        gap: 6px;
+    }
+
+    .cat-chip {
+        padding: 5px 10px;
+        font-size: 11px;
+    }
+
+    .brand-stats {
+        padding: 14px 16px;
+    }
+
+    .stat-num {
+        font-size: 19px;
+    }
+
+    .form-inner {
+        max-width: 360px;
+        gap: 18px;
+    }
+
+    .login-form {
+        gap: 14px;
+    }
+}
+
+@media (max-height: 740px) {
+    .brand-panel {
+        align-items: flex-start;
+        overflow-y: auto;
+    }
+
+    .category-preview,
+    .brand-stats {
+        display: none;
+    }
+
+    .form-panel {
+        align-items: flex-start;
+    }
 }
 
 @media (max-width: 400px) {
