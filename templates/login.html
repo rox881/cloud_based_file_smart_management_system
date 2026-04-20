@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="DocClassifier — Sign in or create your personal smart file vault.">
+    <title>Sign In — DocClassifier</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📁</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+    <style>
+        /* ── Toggle tabs ── */
+        .auth-tabs {
+            display: flex;
+            background: rgba(255,255,255,0.04);
+            border-radius: 10px;
+            padding: 4px;
+            margin-bottom: 24px;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .auth-tab {
+            flex: 1;
+            padding: 9px 0;
+            border: none;
+            background: transparent;
+            color: var(--text-muted, #888);
+            font-size: 14px;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            border-radius: 7px;
+            transition: all 0.22s ease;
+        }
+        .auth-tab.active {
+            background: var(--accent, #6c63ff);
+            color: #fff;
+            box-shadow: 0 2px 12px rgba(108,99,255,0.35);
+        }
+        .auth-tab:hover:not(.active) { color: #fff; background: rgba(255,255,255,0.06); }
+
+        /* ── Form panels ── */
+        .form-panel-auth {
+            position: relative;
+            overflow: hidden;
+            min-height: 320px;
+        }
+        .auth-pane {
+            width: 100%;
+            transition: opacity 0.28s ease, transform 0.28s ease;
+        }
+        .auth-pane.hidden-pane {
+            opacity: 0;
+            pointer-events: none;
+            position: absolute;
+            top: 0;
+            transform: translateY(12px);
+        }
+        .auth-pane.active-pane {
+            opacity: 1;
+            pointer-events: auto;
+            position: static;
+            transform: translateY(0);
+        }
+
+        /* ── Name field (register only) ── */
+        #nameGroup { margin-bottom: 18px; }
+
+        /* ── Success / Error alerts ── */
+        .alert-success {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 12px 14px;
+            border-radius: 8px;
+            background: rgba(34,197,94,0.1);
+            border: 1px solid rgba(34,197,94,0.25);
+            color: #4ade80;
+            font-size: 13px;
+            margin-bottom: 14px;
+        }
+        .alert-success svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
+
+        /* ── Strength bar ── */
+        .strength-wrap { margin-top: 6px; }
+        .strength-bar {
+            height: 3px;
+            border-radius: 3px;
+            background: rgba(255,255,255,0.08);
+            overflow: hidden;
+            margin-bottom: 4px;
+        }
+        .strength-fill {
+            height: 100%;
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+        .strength-label { font-size: 11px; color: var(--text-muted,#888); }
+    </style>
+</head>
+<body>
+
+    <!-- Animated background mesh -->
+    <div class="bg-mesh" aria-hidden="true">
+        <div class="mesh-orb orb-1"></div>
+        <div class="mesh-orb orb-2"></div>
+        <div class="mesh-orb orb-3"></div>
+        <canvas id="gridCanvas" class="grid-canvas"></canvas>
+    </div>
+
+    <!-- Floating particles -->
+    <div class="particles" id="particles" aria-hidden="true"></div>
+
+    <!-- Login container -->
+    <div class="login-wrapper">
+
+        <!-- ===== Left branding panel ===== -->
+        <div class="brand-panel" id="brandPanel">
+            <div class="brand-content">
+
+                <div class="brand-logo">
+                    <div class="brand-logo-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <path d="m9 15 2 2 4-4"/>
+                        </svg>
+                    </div>
+                    <span class="brand-name">DocClassifier</span>
+                </div>
+
+                <div class="brand-headline">
+                    <h1>Your Personal<br><span class="headline-accent">Smart File Vault</span></h1>
+                    <p class="brand-tagline">
+                        Upload once, find always. Your files are automatically sorted into
+                        categories — Reports, Assignments, Invoices and more — so you never
+                        lose a document again.
+                    </p>
+                </div>
+
+                <!-- How it works -->
+                <div class="how-it-works">
+                    <div class="hiw-step">
+                        <div class="hiw-num">1</div>
+                        <div class="hiw-body">
+                            <div class="hiw-title">Upload any file</div>
+                            <div class="hiw-desc">PDF, Word, image — anything goes</div>
+                        </div>
+                    </div>
+                    <div class="hiw-connector"></div>
+                    <div class="hiw-step">
+                        <div class="hiw-num">2</div>
+                        <div class="hiw-body">
+                            <div class="hiw-title">AI classifies it</div>
+                            <div class="hiw-desc">Content is read and categorised instantly</div>
+                        </div>
+                    </div>
+                    <div class="hiw-connector"></div>
+                    <div class="hiw-step">
+                        <div class="hiw-num">3</div>
+                        <div class="hiw-body">
+                            <div class="hiw-title">Browse by category</div>
+                            <div class="hiw-desc">See only your files, neatly organised</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Category chips preview -->
+                <div class="category-preview">
+                    <span class="cat-chip chip-report">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16h16V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        Reports
+                    </span>
+                    <span class="cat-chip chip-assignment">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        Assignments
+                    </span>
+                    <span class="cat-chip chip-invoice">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+                        Invoices
+                    </span>
+                    <span class="cat-chip chip-image">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                        Images
+                    </span>
+                    <span class="cat-chip chip-other">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        &amp; more…
+                    </span>
+                </div>
+
+                <div class="brand-stats">
+                    <div class="stat-item">
+                        <span class="stat-num" data-target="12500">0</span>
+                        <span class="stat-label">Docs Classified</span>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-item">
+                        <span class="stat-num" data-target="98">0</span><span class="stat-pct">%</span>
+                        <span class="stat-label">AI Accuracy</span>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-item">
+                        <span class="stat-num" data-target="340">0</span><span class="stat-pct">+</span>
+                        <span class="stat-label">Active Users</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ===== Right form panel ===== -->
+        <div class="form-panel" id="formPanel">
+            <div class="form-inner">
+
+                <!-- Mobile logo -->
+                <div class="mobile-logo">
+                    <div class="brand-logo-icon small">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <path d="m9 15 2 2 4-4"/>
+                        </svg>
+                    </div>
+                    <span class="brand-name">DocClassifier</span>
+                </div>
+
+                <!-- ── Auth mode tabs ── -->
+                <div class="auth-tabs" role="tablist">
+                    <button class="auth-tab active" id="tabLogin" role="tab" aria-selected="true" onclick="switchTab('login')">Sign In</button>
+                    <button class="auth-tab" id="tabRegister" role="tab" aria-selected="false" onclick="switchTab('register')">Create Account</button>
+                </div>
+
+                <!-- ── Shared error alert ── -->
+                <div class="alert alert-error" id="loginError" role="alert" aria-live="polite" hidden>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                    <span id="loginErrorMsg">Invalid email or password.</span>
+                </div>
+
+                <!-- ── Shared success ── -->
+                <div class="alert-success" id="regSuccess" hidden>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    <span>Account created! You can now sign in.</span>
+                </div>
+
+                <!-- ==============================
+                     SIGN-IN PANE
+                     ============================== -->
+                <div class="auth-pane active-pane" id="paneLogin">
+
+                    <div class="form-header">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; width:100%;">
+                            <div>
+                                <h2 class="form-title">Welcome back 👋</h2>
+                                <p class="form-subtitle">Sign in to access your personal file vault</p>
+                            </div>
+                            <button type="button" class="field-link" onclick="switchTab('register')" style="background:none; border:none; cursor:pointer; font-size:12px; margin-top:4px;">
+                                Need an account?
+                            </button>
+                        </div>
+                    </div>
+
+                    <form id="loginForm" class="login-form" novalidate autocomplete="off">
+
+                        <!-- Email or username -->
+                        <div class="field-group" id="loginEmailGroup">
+                            <label class="field-label" for="loginEmailInput">Email or username</label>
+                            <div class="field-wrap">
+                                <span class="field-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="2" y="4" width="20" height="16" rx="2"/>
+                                        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                                    </svg>
+                                </span>
+                                <input type="text" id="loginEmailInput" name="identifier" class="field-input"
+                                    placeholder="you@example.com or your username" autocomplete="username" required>
+                            </div>
+                            <span class="field-error" id="loginEmailError"></span>
+                        </div>
+
+                        <!-- Password -->
+                        <div class="field-group" id="loginPasswordGroup">
+                            <div class="field-label-row">
+                                <label class="field-label" for="loginPasswordInput">Password</label>
+                                <a href="#" class="field-link" id="forgotLink" tabindex="-1">Forgot password?</a>
+                            </div>
+                            <div class="field-wrap">
+                                <span class="field-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                                    </svg>
+                                </span>
+                                <input type="password" id="loginPasswordInput" name="password" class="field-input"
+                                    placeholder="••••••••" autocomplete="current-password" required>
+                                <button type="button" class="field-toggle" id="togglePassword" title="Show/hide password" aria-label="Toggle password visibility">
+                                    <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                        <circle cx="12" cy="12" r="3"/>
+                                    </svg>
+                                    <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                                        <line x1="1" y1="1" x2="23" y2="23"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <span class="field-error" id="loginPasswordError"></span>
+                        </div>
+
+                        <!-- Remember me -->
+                        <div class="remember-row">
+                            <label class="checkbox-label" for="rememberMe">
+                                <input type="checkbox" id="rememberMe" class="checkbox-input">
+                                <span class="checkbox-custom"></span>
+                                <span class="checkbox-text">Keep me signed in</span>
+                            </label>
+                        </div>
+
+                        <!-- Submit -->
+                        <button type="submit" class="btn-login" id="loginBtn">
+                            <span class="btn-login-text">Sign in to my vault</span>
+                            <span class="btn-login-spinner" aria-hidden="true" hidden>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="spin-icon">
+                                    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                                </svg>
+                            </span>
+                        </button>
+
+                    </form>
+
+                    <div class="divider">
+                        <span class="divider-text">quick demo access</span>
+                    </div>
+
+                    <!-- Demo button -->
+                    <button type="button" class="demo-btn-full" id="demoUser">
+                        <div class="demo-avatar">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
+                            </svg>
+                        </div>
+                        <div class="demo-info">
+                            <div class="demo-name">Demo Account</div>
+                            <div class="demo-email">demo@docclassifier.io</div>
+                        </div>
+                        <div class="demo-arrow">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="9 18 15 12 9 6"/>
+                            </svg>
+                        </div>
+                    </button>
+
+                    <div class="credentials-hint">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        <span>Demo: <code>demo@docclassifier.io</code> / <code>demo1234</code></span>
+                    </div>
+
+                    <p class="form-footer">
+                        New here? <a href="#" class="field-link" onclick="switchTab('register');return false;">Create an account →</a>
+                    </p>
+
+                </div>
+
+                <!-- ==============================
+                     REGISTER PANE
+                     ============================== -->
+                <div class="auth-pane hidden-pane" id="paneRegister">
+
+                    <div class="form-header">
+                        <h2 class="form-title">Create your vault 🔐</h2>
+                        <p class="form-subtitle">Free forever. No credit card needed.</p>
+                    </div>
+
+                    <form id="registerForm" class="login-form" novalidate autocomplete="off">
+
+                        <!-- Full Name -->
+                        <div class="field-group" id="nameGroup">
+                            <label class="field-label" for="regNameInput">Full name</label>
+                            <div class="field-wrap">
+                                <span class="field-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                        <circle cx="12" cy="7" r="4"/>
+                                    </svg>
+                                </span>
+                                <input type="text" id="regNameInput" name="name" class="field-input"
+                                    placeholder="Your full name" autocomplete="name" required>
+                            </div>
+                            <span class="field-error" id="regNameError"></span>
+                        </div>
+
+                        <!-- Email -->
+                        <div class="field-group" id="regEmailGroup">
+                            <label class="field-label" for="regEmailInput">Email address</label>
+                            <div class="field-wrap">
+                                <span class="field-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="2" y="4" width="20" height="16" rx="2"/>
+                                        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                                    </svg>
+                                </span>
+                                <input type="email" id="regEmailInput" name="email" class="field-input"
+                                    placeholder="you@example.com" autocomplete="email" required>
+                            </div>
+                            <span class="field-error" id="regEmailError"></span>
+                        </div>
+
+                        <!-- Password -->
+                        <div class="field-group" id="regPasswordGroup">
+                            <label class="field-label" for="regPasswordInput">Password</label>
+                            <div class="field-wrap">
+                                <span class="field-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                                    </svg>
+                                </span>
+                                <input type="password" id="regPasswordInput" name="password" class="field-input"
+                                    placeholder="Min. 6 characters" autocomplete="new-password" required>
+                                <button type="button" class="field-toggle" id="toggleRegPassword" title="Show/hide password" aria-label="Toggle password visibility">
+                                    <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                        <circle cx="12" cy="12" r="3"/>
+                                    </svg>
+                                    <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                                        <line x1="1" y1="1" x2="23" y2="23"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="strength-wrap">
+                                <div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div>
+                                <span class="strength-label" id="strengthLabel"></span>
+                            </div>
+                            <span class="field-error" id="regPasswordError"></span>
+                        </div>
+
+                        <!-- Submit -->
+                        <button type="submit" class="btn-login" id="registerBtn">
+                            <span class="btn-login-text">Create my account</span>
+                            <span class="btn-login-spinner" aria-hidden="true" hidden>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="spin-icon">
+                                    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                                </svg>
+                            </span>
+                        </button>
+
+                    </form>
+
+                    <p class="form-footer" style="margin-top:18px;">
+                        Already have an account? <a href="#" class="field-link" onclick="switchTab('login');return false;">Sign in →</a>
+                    </p>
+
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Success overlay -->
+    <div class="success-overlay" id="successOverlay" hidden>
+        <div class="success-box">
+            <div class="success-checkmark">
+                <svg viewBox="0 0 52 52" class="checkmark-svg">
+                    <circle class="checkmark-circle" cx="26" cy="26" r="25" fill="none"/>
+                    <path class="checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+                </svg>
+            </div>
+            <div class="success-title" id="successTitle">Welcome back!</div>
+            <div class="success-sub">Loading your file vault…</div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/login.js') }}"></script>
+</body>
+</html>

@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Smart Document Classifier — Upload, classify, and search documents with AI-powered categorization stored in the cloud.">
-    <title>Smart Document Classifier</title>
+    <meta name="description" content="DocClassifier — Your personal smart file vault. Upload, classify, and browse your documents by category.">
+    <title>My Vault — DocClassifier</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📁</text></svg>">
 </head>
 <body>
@@ -13,7 +14,7 @@
 
         <!-- ===== Sidebar ===== -->
         <aside class="app-sidebar" id="sidebar">
-            <div class="sidebar-logo" id="sidebarLogoBtn" title="Smart Document Classifier">
+            <div class="sidebar-logo" id="sidebarLogoBtn" title="DocClassifier">
                 <div class="sidebar-logo-icon">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
@@ -25,7 +26,8 @@
             </div>
 
             <nav class="sidebar-nav">
-                <a href="#section-upload" class="sidebar-nav-item active" data-section="section-upload" id="nav-upload" title="Upload & Classify">
+                <!-- Upload -->
+                <a href="#" class="sidebar-nav-item active" data-view="upload" id="nav-upload" title="Upload Files">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="17 8 12 3 7 8"/>
@@ -33,23 +35,57 @@
                     </svg>
                     <span class="sidebar-nav-label">Upload</span>
                 </a>
-                <a href="#section-search" class="sidebar-nav-item" data-section="section-search" id="nav-search" title="Search Documents">
+
+                <!-- My Files -->
+                <a href="#" class="sidebar-nav-item" data-view="myfiles" id="nav-myfiles" title="My Files">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span class="sidebar-nav-label">My Files</span>
+                </a>
+
+                <!-- Search -->
+                <a href="#" class="sidebar-nav-item" data-view="search" id="nav-search" title="Search">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="11" cy="11" r="8"/>
                         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                     <span class="sidebar-nav-label">Search</span>
                 </a>
-                <a href="#section-results" class="sidebar-nav-item" data-section="section-results" id="nav-results" title="Results">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="3" y="3" width="7" height="7"/>
-                        <rect x="14" y="3" width="7" height="7"/>
-                        <rect x="3" y="14" width="7" height="7"/>
-                        <rect x="14" y="14" width="7" height="7"/>
-                    </svg>
-                    <span class="sidebar-nav-label">Results</span>
-                </a>
+
+                <!-- Divider label -->
+                <div class="sidebar-section-label">Categories</div>
+
+                <!-- Dynamic category nav items injected here -->
+                <div id="categorySidebarNav"></div>
             </nav>
+
+            <!-- Storage Quota Widget -->
+            <div class="sidebar-storage" id="sidebarStorage" hidden>
+                <div class="storage-info">
+                    <span class="storage-label">Storage (50MB/user)</span>
+                    <span class="storage-value" id="storageVal">0 B / 50 MB</span>
+                </div>
+                <div class="storage-bar-wrap">
+                    <div class="storage-bar-fill" id="storageFill"></div>
+                </div>
+            </div>
+
+            <!-- Sidebar user card -->
+            <div class="sidebar-user" id="sidebarUser">
+                <div class="sidebar-user-avatar" id="sidebarAvatar">?</div>
+                <div class="sidebar-user-info" id="sidebarUserInfo">
+                    <div class="sidebar-user-name" id="sidebarUserName">Loading…</div>
+                    <div class="sidebar-user-email" id="sidebarUserEmail"></div>
+                </div>
+                <button class="sidebar-logout" id="logoutBtn" title="Sign out">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                        <polyline points="16 17 21 12 16 7"/>
+                        <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                </button>
+            </div>
 
             <button class="sidebar-toggle" id="sidebarToggle" title="Expand sidebar">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -61,8 +97,10 @@
         <!-- ===== Header ===== -->
         <header class="app-header">
             <div class="header-left">
-                <span class="header-title">Smart Document Classifier</span>
-                <span class="header-badge">Cloud</span>
+                <div class="header-greeting" id="headerGreeting">
+                    <span class="header-greet-text" id="greetText">Good morning</span>
+                    <span class="header-user-name" id="headerUserName">…</span>
+                </div>
             </div>
 
             <div class="header-search">
@@ -70,104 +108,241 @@
                     <circle cx="11" cy="11" r="8"/>
                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
-                <input
-                    type="text"
-                    class="header-search-input"
-                    id="searchInput"
-                    placeholder="Search inside document text..."
-                    autocomplete="off"
-                >
+                <input type="text" class="header-search-input" id="searchInput"
+                    placeholder="Search your documents…" autocomplete="off">
                 <button class="header-search-btn" id="searchBtn" type="button">↵</button>
             </div>
 
             <div class="header-right">
-                <!-- placeholder for future actions -->
+                <!-- Upload shortcut -->
+                <button class="header-upload-btn" id="headerUploadBtn" title="Upload files">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <span>Upload</span>
+                </button>
+                <!-- User avatar -->
+                <div class="header-avatar" id="headerAvatar" title="Signed in">?</div>
             </div>
         </header>
 
-        <!-- ===== Main Content ===== -->
-        <main class="app-main">
-            <div class="main-content">
+        <!-- ===== Main ===== -->
+        <main class="app-main" id="appMain">
 
-                <!-- Upload Section -->
-                <section id="section-upload">
-                    <div class="section-header">
-                        <div>
-                            <h1 class="section-title">Upload & Classify</h1>
-                            <p class="section-subtitle">Upload files to automatically extract text and classify them into categories.</p>
+            <!-- ======================================================
+                 VIEW: UPLOAD
+            ====================================================== -->
+            <div class="view" id="view-upload">
+                <div class="view-header">
+                    <div>
+                        <h1 class="view-title">Upload Files</h1>
+                        <p class="view-subtitle">Drop your files here — our AI will read the content and sort them automatically into the right category.</p>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="upload-zone" id="dropArea">
+                        <div class="upload-zone-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
                         </div>
+                        <div class="upload-zone-title">Drag &amp; drop your files here</div>
+                        <div class="upload-zone-subtitle">or click to browse from your device</div>
+                        <input type="file" id="fileInput" multiple accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" hidden>
+                        <button class="btn btn-outline" id="browseBtn" type="button">Browse Files</button>
+                        <div class="upload-zone-formats">Supported: PDF, DOC, DOCX, TXT, PNG, JPG, JPEG</div>
                     </div>
 
-                    <div class="panel">
-                        <div class="upload-zone" id="dropArea">
-                            <div class="upload-zone-icon">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                    <polyline points="17 8 12 3 7 8"/>
-                                    <line x1="12" y1="3" x2="12" y2="15"/>
-                                </svg>
-                            </div>
-                            <div class="upload-zone-title">Drag and drop files here</div>
-                            <div class="upload-zone-subtitle">or click to browse from your device</div>
-                            <input type="file" id="fileInput" multiple accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg" hidden>
-                            <button class="btn btn-outline" id="browseBtn" type="button">Browse Files</button>
-                            <div class="upload-zone-formats">Supported: PDF, DOC, DOCX, TXT, PNG, JPG, JPEG</div>
-                        </div>
+                    <div class="file-list" id="fileList"></div>
 
-                        <!-- File list -->
-                        <div class="file-list" id="fileList"></div>
-
-                        <!-- Classify actions -->
-                        <div class="classify-actions" id="classifyActions" style="display:none;">
-                            <span class="file-count" id="fileCount">0 files selected</span>
-                            <button class="btn btn-primary" id="classifyBtn" type="button" disabled>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="m9 15 2 2 4-4"/>
-                                    <path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 0C1.46 6.7 1.33 10.28 4 13l8 8 8-8c2.67-2.72 2.54-6.3.42-8.42z"/>
-                                </svg>
-                                Classify All Files
-                            </button>
-                        </div>
+                    <div class="classify-actions" id="classifyActions" style="display:none;">
+                        <span class="file-count" id="fileCount">0 files selected</span>
+                        <button class="btn btn-primary" id="classifyBtn" type="button" disabled>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m9 15 2 2 4-4"/>
+                                <path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 0C1.46 6.7 1.33 10.28 4 13l8 8 8-8c2.67-2.72 2.54-6.3.42-8.42z"/>
+                            </svg>
+                            Classify &amp; Save
+                        </button>
                     </div>
-                </section>
+                </div>
 
-                <!-- Processing Status Banner -->
+                <!-- Processing status -->
                 <div class="status-banner" id="statusBanner" hidden>
                     <div class="status-spinner"></div>
-                    <span class="status-text" id="statusText">Processing files...</span>
+                    <span class="status-text" id="statusText">Processing files…</span>
                     <div class="status-progress">
                         <div class="status-progress-bar" id="statusProgressBar"></div>
                     </div>
                 </div>
 
-                <!-- Results Section -->
-                <section id="section-results" class="results-section" hidden>
-                    <div class="panel">
-                        <div class="panel-header">
-                            <span class="panel-title" id="resultsTitle">Results</span>
-                            <span class="panel-count" id="resultsCount"></span>
-                        </div>
-                        <div id="resultsContainer"></div>
-                    </div>
-                </section>
+                <!-- Inline results after classify -->
+                <div id="uploadResults"></div>
+            </div>
 
-                <!-- Search Results Section -->
-                <section id="section-search" class="results-section" hidden>
+            <!-- ======================================================
+                 VIEW: MY FILES  (category tabs + grid)
+            ====================================================== -->
+            <div class="view" id="view-myfiles" hidden>
+                <div class="view-header">
+                    <div>
+                        <h1 class="view-title">My Files</h1>
+                        <p class="view-subtitle">All your uploaded documents, automatically sorted into categories.</p>
+                    </div>
+                    <div class="view-header-actions">
+                        <div class="view-mode-toggle">
+                            <button class="mode-btn active" id="modeGrid" title="Grid view">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                                    <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+                                </svg>
+                            </button>
+                            <button class="mode-btn" id="modeList" title="List view">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+                                    <line x1="8" y1="18" x2="21" y2="18"/>
+                                    <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/>
+                                    <line x1="3" y1="18" x2="3.01" y2="18"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Category filter tabs -->
+                <div class="category-tabs" id="categoryTabs">
+                    <button class="cat-tab active" data-cat="all" id="tab-all">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                            <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+                        </svg>
+                        All Files
+                        <span class="cat-tab-count" id="count-all">0</span>
+                    </button>
+                    <!-- Remaining tabs injected by JS -->
+                </div>
+
+                <!-- Stats bar -->
+                <div class="files-stats" id="filesStats">
+                    <div class="stat-pill">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                        </svg>
+                        <span id="statsTotalFiles">0 files</span>
+                    </div>
+                    <div class="stat-pill">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                        <span id="statsCategories">0 categories</span>
+                    </div>
+                </div>
+
+                <!-- File grid / list -->
+                <div id="myFilesContainer" class="files-grid-view">
+                    <div class="empty-state" id="myFilesEmpty">
+                        <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                        </svg>
+                        <div class="empty-state-text">No files yet</div>
+                        <div class="empty-state-subtext">Upload your first file to get started</div>
+                        <button class="btn btn-primary" onclick="switchView('upload')" style="margin-top:12px;">
+                            Upload Now
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ======================================================
+                 VIEW: SEARCH
+            ====================================================== -->
+            <div class="view" id="view-search" hidden>
+                <div class="view-header">
+                    <div>
+                        <h1 class="view-title">Search</h1>
+                        <p class="view-subtitle">Search through the content of all your documents.</p>
+                    </div>
+                </div>
+
+                <div class="panel search-panel">
+                    <div class="search-big-wrap">
+                        <svg class="search-big-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"/>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        </svg>
+                        <input type="text" id="searchBigInput" class="search-big-input"
+                            placeholder="Search by keyword, topic, or phrase…" autocomplete="off">
+                        <button class="btn btn-primary" id="searchBigBtn" type="button">Search</button>
+                    </div>
+                </div>
+
+                <div id="section-search" hidden>
                     <div class="panel">
                         <div class="panel-header">
-                            <span class="panel-title" id="searchResultsTitle">Search Results</span>
+                            <span class="panel-title" id="searchResultsTitle">Results</span>
                             <span class="panel-count" id="searchResultsCount"></span>
                         </div>
                         <div id="searchResultsContainer"></div>
                     </div>
-                </section>
-
+                </div>
             </div>
-        </main>
 
+            <!-- ======================================================
+                 VIEW: CATEGORY (injected by JS when sidebar cat clicked)
+            ====================================================== -->
+            <div class="view" id="view-category" hidden>
+                <div class="view-header">
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <button class="back-btn" id="categoryBackBtn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="15 18 9 12 15 6"/>
+                            </svg>
+                        </button>
+                        <div>
+                            <h1 class="view-title" id="categoryViewTitle">Category</h1>
+                            <p class="view-subtitle" id="categoryViewSubtitle"></p>
+                        </div>
+                    </div>
+                </div>
+                <div id="categoryFilesContainer" class="files-grid-view"></div>
+            </div>
+
+        </main>
     </div>
 
-    <!-- Toast container -->
+    <!-- ===== modal backdrop ===== -->
+    <div class="modal-backdrop" id="modalBackdrop" hidden></div>
+
+    <!-- ===== Document detail modal ===== -->
+    <div class="modal" id="docModal" hidden>
+        <div class="modal-header">
+            <span class="modal-title" id="docModalTitle">Document Details</span>
+            <button class="modal-close" id="docModalClose" title="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body" id="docModalBody"></div>
+        <div class="modal-footer">
+            <button class="btn btn-outline btn-sm" id="docModalCloseBtn" type="button">Close</button>
+            <button class="btn btn-outline btn-sm" id="docModalDeleteBtn" type="button">Delete</button>
+            <button class="btn btn-primary btn-sm" id="docModalDownloadBtn" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Download
+            </button>
+        </div>
+    </div>
+
+    <!-- ===== Toast container ===== -->
     <div class="toast-container" id="toastContainer"></div>
 
     <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
