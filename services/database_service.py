@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from supabase import Client
@@ -104,6 +105,22 @@ class DatabaseService:
         if _has_content_hash(self.supabase):
             cols.append("content_hash")
         return ",".join(cols)
+
+    def _apply_user_scope(self, req: Any, created_by: str = "", user_id: str = "") -> Any:
+        col_exists = _has_created_by(self.supabase)
+        owner_col_exists = _has_owner_user_id(self.supabase)
+        if created_by and col_exists:
+            return req.eq("created_by", created_by)
+        if user_id and owner_col_exists:
+            return req.eq("owner_user_id", user_id)
+        if user_id:
+            return req.ilike("folder_location", f"users/{user_id}/%")
+        return req
+
+    @staticmethod
+    def _safe_like_token(token: str) -> str:
+        # Keep a compact token to avoid malformed OR filters.
+        return re.sub(r"[^a-zA-Z0-9_-]", "", (token or "").strip())
 
     # ── Auth ──────────────────────────────────────────────────────
 
@@ -332,23 +349,57 @@ class DatabaseService:
             raise
 
     def search_documents(self, query: str, created_by: str = "", user_id: str = "") -> Any:
-        col_exists = _has_created_by(self.supabase)
-        owner_col_exists = _has_owner_user_id(self.supabase)
         select_cols = self._document_select_columns(include_content_text=False)
-        req = (
-            self.supabase.table("documents")
-            .select(select_cols)
-            .text_search("search_vector", query)
+
+        # Primary path: PostgreSQL full-text search (best quality when search_vector is present).
+        try:
+            fts_req = self._apply_user_scope(
+                self.supabase.table("documents").select(select_cols).text_search("search_vector", query),
+                created_by=created_by,
+                user_id=user_id,
+            )
+            fts_response = fts_req.execute()
+            if fts_response.data:
+                print(f"[search.response.fts] payload={self.debug_payload(fts_response)}")
+                return fts_response
+            print("[search.response.fts] empty result set; switching to ilike fallback")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[search.response.fts.error] {exc}; switching to ilike fallback")
+
+        # Fallback path: tokenized ILIKE search that works even without search_vector.
+        raw_tokens = [part for part in re.split(r"\s+", (query or "").strip()) if part]
+        safe_tokens: list[str] = []
+        for token in raw_tokens[:8]:
+            clean = self._safe_like_token(token)
+            if clean and clean not in safe_tokens:
+                safe_tokens.append(clean)
+
+        fallback_req = self._apply_user_scope(
+            self.supabase.table("documents").select(select_cols),
+            created_by=created_by,
+            user_id=user_id,
         )
-        if created_by and col_exists:
-            req = req.eq("created_by", created_by)
-        elif user_id and owner_col_exists:
-            req = req.eq("owner_user_id", user_id)
-        elif user_id:
-            req = req.ilike("folder_location", f"users/{user_id}/%")
-        response = req.execute()
-        print(f"[search.response] payload={self.debug_payload(response)}")
-        return response
+
+        or_clauses: list[str] = []
+        for token in safe_tokens:
+            pattern = f"%{token}%"
+            or_clauses.extend(
+                [
+                    f"file_name.ilike.{pattern}",
+                    f"category.ilike.{pattern}",
+                    f"mime_type.ilike.{pattern}",
+                    f"content_text.ilike.{pattern}",
+                ]
+            )
+            if _has_summary_text(self.supabase):
+                or_clauses.append(f"summary_text.ilike.{pattern}")
+
+        if or_clauses:
+            fallback_req = fallback_req.or_(",".join(or_clauses))
+
+        fallback_response = fallback_req.order("id", desc=True).limit(200).execute()
+        print(f"[search.response.fallback] payload={self.debug_payload(fallback_response)}")
+        return fallback_response
 
     def get_documents_by_user(self, created_by: str, user_id: str = "") -> Any:
         """Return documents for the given user. Falls back to all docs if column missing."""
